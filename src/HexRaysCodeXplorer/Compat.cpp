@@ -1,162 +1,106 @@
 #include "Compat.h"
-#include <expr.hpp>
-#include <typeinf.hpp>
+#include <struct.hpp>
+#include <name.hpp>
 
 namespace Compat
 {
 	tid_t add_struc(uval_t idx, const char* name, bool is_union)
 	{
-		udt_type_data_t udt;
-		udt.is_union = is_union;
-
-		tinfo_t tif;
-		tif.create_udt(udt);
-		tif.set_named_type(nullptr, name);
-		return tif.get_tid();
+		return ::add_struc(idx, name, is_union);
 	}
 
-	struc_error_t add_struc_member(tid_t sid, const char* fieldname, ea_t offset, flags64_t flag,
+	struc_error_t add_struc_member(tid_t sid, const char* fieldname, ea_t offset, flags_t flag,
 								   const opinfo_t* mt, asize_t nbytes)
 	{
-		qstring name_user;
-		if (fieldname)
-			qstr2user(&name_user, fieldname);
-
-		idc_value_t result;
-		idc_value_t args[6] = { sid, name_user, offset, flag, mt ? mt->tid : BADADDR, nbytes };
-		call_idc_func(&result, "add_struc_member", args, 6);
-		return static_cast<struc_error_t>(result.num);
+		return static_cast<struc_error_t>(::add_struc_member(get_struc(sid), fieldname, offset, flag, mt, nbytes));
 	}
 
 	int get_member_flag(tid_t sid, asize_t offset)
 	{
-		idc_value_t result;
-		idc_value_t args[2] = { sid, offset };
-		call_idc_func(&result, "get_member_flag", args, 2);
-		return result.num;
+		struc_t* s = get_struc(sid);
+		if (!s) return -1;
+		member_t* m = get_member(s, offset);
+		return m ? m->flag : -1;
 	}
 
 	tid_t get_member_id(tid_t sid, asize_t offset)
 	{
-		tinfo_t tif;
-		if (tif.get_type_by_tid(sid) && tif.is_udt())
-		{
-			udm_t udm;
-			udm.offset = offset;
-
-			int idx = tif.find_udm(&udm, STRMEM_AUTO);
-			if (idx != -1)
-				return tif.get_udm_tid(idx);
-		}
-
-		return BADADDR;
+		struc_t* s = get_struc(sid);
+		if (!s) return BADADDR;
+		member_t* m = get_member(s, offset);
+		return m ? m->id : BADADDR;
 	}
 
 	qstring get_member_name(tid_t sid, asize_t offset)
 	{
-		tinfo_t tif;
-		if (tif.get_type_by_tid(sid) && tif.is_udt())
-		{
-			udm_t udm;
-			udm.offset = offset;
-
-			int idx = tif.find_udm(&udm, STRMEM_AUTO);
-			if (idx != -1)
-				return udm.name;
+		qstring result;
+		struc_t* s = get_struc(sid);
+		if (!s) return result;
+		member_t* m = get_member(s, offset);
+		if (m) {
+			get_member_name(&result, m->id);
 		}
-
-		return qstring();
+		return result;
 	}
 
 	asize_t get_member_size(tid_t sid, asize_t offset)
 	{
-		tinfo_t tif;
-		if (tif.get_type_by_tid(sid) && tif.is_udt())
-		{
-			udm_t udm;
-			udm.offset = offset;
-
-			int idx = tif.find_udm(&udm, STRMEM_AUTO);
-			if (idx != -1)
-				return udm.size / 8;
-		}
-
-		return BADADDR;
+		struc_t* s = get_struc(sid);
+		if (!s) return 0;
+		member_t* m = get_member(s, offset);
+		return m ? get_member_size(m) : 0;
 	}
 
 	bool get_member_tinfo(tinfo_t* tif, tid_t sid, asize_t offset)
 	{
-		tinfo_t tif_local;
-		if (tif_local.get_type_by_tid(sid) && tif_local.is_udt())
-		{
-			udm_t udm;
-			udm.offset = offset;
-
-			int idx = tif_local.find_udm(&udm, STRMEM_AUTO);
-			if (idx != -1)
-				*tif = udm.type;
-		}
-
-		return false;
+		struc_t* s = get_struc(sid);
+		if (!s) return false;
+		member_t* m = get_member(s, offset);
+		return m ? ::get_member_tinfo(tif, m) : false;
 	}
 
 	ea_t get_struc_first_offset(tid_t id)
 	{
-		idc_value_t result;
-		idc_value_t args[1] = { id };
-		call_idc_func(&result, "get_first_member", args, 1);
-		return result.num;
+		struc_t* s = get_struc(id);
+		return s ? get_struc_first_offset(s) : BADADDR;
 	}
 
 	tid_t get_struc_id(const char* name)
 	{
-		tid_t tid = get_named_type_tid(name);
-		tinfo_t tif;
-		return tid != BADADDR && tif.get_type_by_tid(tid) && tif.is_udt() ? tid : BADADDR;
+		return ::get_struc_id(name);
 	}
 
 	qstring get_struc_name(tid_t id)
 	{
-		qstring name;
-		get_tid_name(&name, id);
-		return name;
+		qstring result;
+		get_struc_name(&result, id);
+		return result;
 	}
 
 	ea_t get_struc_next_offset(tid_t id, ea_t offset)
 	{
-		idc_value_t result;
-		idc_value_t args[2] = { id, offset };
-		call_idc_func(&result, "get_next_offset", args, 2);
-		return result.num;
+		struc_t* s = get_struc(id);
+		return s ? get_struc_next_offset(s, offset) : BADADDR;
 	}
 
 	bool set_member_name(tid_t sid, ea_t offset, const char* name)
 	{
-		tinfo_t tif;
-		if (tif.get_type_by_tid(sid) && tif.is_udt())
-		{
-			udm_t udm;
-			udm.offset = offset;
-
-			int idx = tif.find_udm(&udm, STRMEM_AUTO);
-			if (idx != -1)
-				return tif.rename_udm(idx, name) == TERR_OK;
-		}
-
-		return false;
+		struc_t* s = get_struc(sid);
+		if (!s) return false;
+		member_t* m = get_member(s, offset);
+		return m ? ::set_member_name(s, offset, name) : false;
 	}
 
 	bool set_member_tinfo(tid_t sid, uval_t memoff, const tinfo_t& tif, int flags)
 	{
-		idc_value_t result;
-		idc_value_t args[5] { sid, memoff, flags, tif.get_tid(), tif.get_size() };
-		call_idc_func(&result, "set_member_type", args, 5);
-		return result.num != 0;
+		struc_t* s = get_struc(sid);
+		if (!s) return false;
+		member_t* m = get_member(s, memoff);
+		return m ? ::set_member_tinfo(s, m, memoff, tif, flags) : false;
 	}
 
 	bool set_struc_cmt(tid_t id, const char* cmt, bool repeatable)
 	{
-		tinfo_t tif;
-		return tif.get_type_by_tid(id) && tif.set_type_cmt(cmt, !repeatable) == TERR_OK;
+		return ::set_struc_cmt(id, cmt, repeatable);
 	}
 }

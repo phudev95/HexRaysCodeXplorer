@@ -1,27 +1,40 @@
 // compatibility functions needed for IDA 9.0 support. mostly ported from IDAPython's idc module
 #pragma once
+
+// Include 32-bit compatibility fixes for IDA SDK 7.7
+#include "IDACompat32.h"
+
 #include <lines.hpp>
 #include <kernwin.hpp>
 #include <nalt.hpp>
+#include <struct.hpp>
+#include <typeinf.hpp>
 
-/// Return values for add_struc_member()
-enum struc_error_t
-{
-	STRUC_ERROR_MEMBER_OK      = 0,  ///< success
-	STRUC_ERROR_MEMBER_NAME    = -1, ///< already has member with this name (bad name)
-	STRUC_ERROR_MEMBER_OFFSET  = -2, ///< already has member at this offset
-	STRUC_ERROR_MEMBER_SIZE    = -3, ///< bad number of bytes or bad sizeof(type)
-	STRUC_ERROR_MEMBER_TINFO   = -4, ///< bad typeid parameter
-	STRUC_ERROR_MEMBER_STRUCT  = -5, ///< bad struct id (the 1st argument)
-	STRUC_ERROR_MEMBER_UNIVAR  = -6, ///< unions can't have variable sized members
-	STRUC_ERROR_MEMBER_VARLAST = -7, ///< variable sized member should be the last member in the structure
-	STRUC_ERROR_MEMBER_NESTED  = -8, ///< recursive structure nesting is forbidden
-};
+// Define flags64_t for older IDA versions if not defined
+#ifndef __EA64__
+typedef flags_t flags64_t;
+#else
+// In IDA 7.7 and later, flags64_t should be available, but we'll use flags_t as fallback
+#if !defined(flags64_t)
+typedef flags_t flags64_t;
+#endif
+#endif
+
+// Platform-specific type definitions for 32-bit vs 64-bit builds
+#ifdef _WIN64
+    // 64-bit build
+    #define IDA_PLATFORM_SUFFIX "64"
+    #define IDA_LIB_SUFFIX "_64"
+#else
+    // 32-bit build  
+    #define IDA_PLATFORM_SUFFIX ""
+    #define IDA_LIB_SUFFIX "_32"
+#endif
 
 namespace Compat
 {
 	tid_t add_struc(uval_t idx, const char* name, bool is_union = false);
-	struc_error_t add_struc_member(tid_t sid, const char* fieldname, ea_t offset, flags64_t flag,
+	struc_error_t add_struc_member(tid_t sid, const char* fieldname, ea_t offset, flags_t flag,
 								   const opinfo_t* mt, asize_t nbytes);
 	int get_member_flag(tid_t sid, asize_t offset);
 	tid_t get_member_id(tid_t sid, asize_t offset);

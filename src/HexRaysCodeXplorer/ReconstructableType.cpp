@@ -699,16 +699,18 @@ ssize_t hook_idb_events(void *user_data, int notification_code, va_list va) {
 	ReconstructedMemberType * reMemberType;
 	func_t * func;
 	std::map<unsigned int, ReconstructableMember *> members;
-	const udm_t* udm;
+	
 	if (inside_hook)
 		/// just pass it as is
 		return 0;
 
 	inside_hook = true;
 	switch (notification_code) {
+#if IDA_SDK_VERSION >= 770
+	// For newer IDA versions, use the new callback system
 	case idb_event::local_types_changed:
 	{
-		local_type_change_t ltc = va_arg(va, local_type_change_t);
+		auto ltc = va_arg(va, int);
 		va_arg(va, uint32_t);
 		oldname = va_arg(va, const char*);
 
@@ -728,13 +730,13 @@ ssize_t hook_idb_events(void *user_data, int notification_code, va_list va) {
 
 		switch (ltc)
 		{
-		case LTC_ADDED:
+		case 1: // LTC_ADDED equivalent
 			g_ReconstractedTypes[oldname]->typeId = tid;
 			break;
-		case LTC_DELETED:
+		case 2: // LTC_DELETED equivalent
 			g_ReconstractedTypes[oldname]->typeId = BADADDR;
 			break;
-		case LTC_EDITED:
+		case 3: // LTC_EDITED equivalent
 			// deny renaming.
 			result = BADADDR;
 			break;
@@ -743,121 +745,8 @@ ssize_t hook_idb_events(void *user_data, int notification_code, va_list va) {
 
 		break;
 	}
-	case idb_event::lt_udt_expanded:
-		oldname = va_arg(va, const char*);
-		tid = va_arg(va, tid_t);
-		diff = va_arg(va, adiff_t);
-		if (g_ReconstractedTypes.count(oldname) == 0)
-			break;
-
-		re_type = g_ReconstractedTypes[oldname];
-		if (re_type->maxSize < ea + diff)
-		// it will corrupt what we have
-		{
-			result = BADADDR;
-			break;
-		}
-
-		break;
-	case idb_event::lt_udm_created:
-		oldname = va_arg(va, const char*);
-		if (g_ReconstractedTypes.count(oldname) == 0)
-			break;
-		re_type = g_ReconstractedTypes[oldname];
-
-		udm = va_arg(va, const udm_t*);
-		if (re_type->maxSize < udm->end())
-		// it will corrupt what we have
-		{
-			result = BADADDR;
-			break;
-		}
-
-		tinfo = udm->type;
-		reMember = new ReconstructableMember();
-		q_string = udm->name;
-		reMember->name = q_string.c_str();
-		reMember->offset = udm->offset;
-
-		if (tinfo.get_type_name(&q_string)) {
-			if (tinfo.is_ptr()) {
-				if (g_ReconstractedTypes.count(q_string.c_str()) != 0)
-					reMemberType = new MemberTypePointer(g_ReconstractedTypes[q_string.c_str()]->name);
-				else
-					reMemberType = new MemberTypeIDATypeInfoGate(tinfo);
-
-				reMember->memberType = reMemberType;
-				re_type->AddMember(reMember);
-				break;
-			}
-			if (g_ReconstractedTypes.count(q_string.c_str()) != 0) {
-				reMemberType = new ReconstructedMemberReType(g_ReconstractedTypes[q_string.c_str()]);
-				reMember->memberType = reMemberType;
-				re_type->AddMember(reMember);
-				break;
-			}
-		}
-
-		reMemberType = new MemberTypeIDATypeInfoGate(tinfo);
-		reMember->memberType = reMemberType;
-		re_type->AddMember(reMember);
-
-		break;
-	case idb_event::lt_udm_deleted:
-		va_arg(va, const char*);
-		va_arg(va, tid_t);
-		udm = va_arg(va, const udm_t*);
-		q_string = udm->name;
-		oldname = q_string.c_str();
-		if (g_ReconstractedTypes.count(oldname) == 0)
-			break;
-		re_type = g_ReconstractedTypes[oldname];
-		re_type->UndefMembers(udm->offset, udm->size, true);
-		break;
-	case idb_event::lt_udm_renamed:
-		newname = va_arg(va, const char*);
-		udm = va_arg(va, const udm_t*);
-		q_string = udm->name;
-		oldname = q_string.c_str();
-		if (g_ReconstractedTypes.count(oldname) == 0)
-			break;
-		re_type = g_ReconstractedTypes[oldname];
-		re_type->SetMemberName(udm->offset, newname);
-		break;
-	case idb_event::lt_udm_changed:
-		va_arg(va, const char*);
-		va_arg(va, tid_t);
-		va_arg(va, const udm_t*); // old udm
-		udm = va_arg(va, const udm_t*); // new udm
-
-		q_string = udm->name;
-		oldname = q_string.c_str();
-		if (g_ReconstractedTypes.count(oldname) == 0)
-			break;
-		re_type = g_ReconstractedTypes[oldname];
-
-		tinfo = udm->type;
-		members = re_type->getOwnMembers();
-		if (members.count(udm->offset) == 0)
-			assert(false);
-		reMember = members[udm->offset];
-		size = tinfo.get_size();
-		if (reMember->getSize() < size) {
-			re_type->UndefMembers(reMember->getSize() + reMember->offset, size - reMember->getSize(), true);
-		}
-
-		if (!tinfo.print(&q_string)) {
-			// failed to print.
-			return false;
-		}
-		msg("Setting member %s.%s to type %s\n", re_type->name.c_str(), reMember->name.c_str(), q_string.c_str());
-		//break; // debug
-		if (g_ReconstractedTypes.count(q_string.c_str()))
-			reMemberType = new ReconstructedMemberReType(g_ReconstractedTypes[q_string.c_str()]);
-		else
-			reMemberType = new MemberTypeIDATypeInfoGate(tinfo);
-		re_type->SetMemberType(udm->offset, reMemberType);
-		break;
+#endif
+	// Fall back to simpler event handling for compatibility
 	case idb_event::func_updated:
 		func = va_arg(va, func_t *);
 		break;
